@@ -1,1 +1,1 @@
-Todo debe ser en ingles!!, nada de español en el codigo o comentarios
+Veo que no

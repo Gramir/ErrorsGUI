@@ -8,32 +8,44 @@ Tool to search for application crashes in Windows Event Log.
 # ============================================================================
 # IMPORTS
 # ============================================================================
-import PySimpleGUI as sg
+import sys
+import base64
+import tempfile
 import win32evtlog
 import win32con
+import pywintypes
 from difflib import SequenceMatcher
 from datetime import datetime, timedelta
 import os
-import ctypes
-import base64
+
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QLineEdit, QPushButton, QComboBox, QCheckBox, 
+    QTextEdit, QFileDialog, QMessageBox, QFrame
+)
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont, QIcon, QClipboard, QPixmap
 
 # ============================================================================
 # CONSTANTS
 # ============================================================================
 
-# Magnifying glass icon embedded in base64 (16x16 PNG)
-ICON_BASE64 = b'''
-iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlz
-AAALEwAACxMBAJqcGAAAActJREFUOI2Nkz1oU2EUhp/v3ptfk5sm1dZWi4ODoKCDg4uDdBAHBxcn
-wUEQcXFwcHRxcXBwEAQRBxdxcHBwcHBxcBAEBRERFBFBsP5ga2yS5t57v+NwE5LWtnThwOU9533O
-+c4RVWUzG3Dz7F7buz7lXWPF/0REUX4r8YqI/PXMZvbR3cLHYGD+QL0xTaE4Sjy1lc7OH1RKH/gy
-90LfvZy/1p+5x3d1l3GcCJXKILnCdnbsOkqmsI1CoUx3bprZ2Wf09n5i33Qjt2/Mq3e/xXON75iD
-B4/huRdnwmDxYiLhzlWrUK1W8P2QWq1GOh2wsLBI6/6tZDINwuCvOE7wMBpbOFGtNKbjMRu7xm5i
-c4NEIkFMrI8oXEMsDtfNvAfYCxCJxPHDgEajRr1eR8MQEYeEm0bcBIlEAt/38f2ARj0gDEMC3ycI
-AoLAJwwaax3cRIJEIkkymaZR9/E8Hy8IWcY1x0GcOIlkkmQqheO4eJ6H7/vUPY8g8PG9QCpLJ/B6
-WmKJZBLXjZNKpUkk06RSaRxdvKN1f0Vj1cbS5MpzlMCdJpHMsMVN8+p1g9kFOHK0Fy8ycPn8O/F7
-Zxi5/3nD5+i/9hcw78hwPeFCaAAAAABJRU5ErkJggg==
-'''
+# Magnifying glass icon (32x32 PNG) in base64 for window icon
+ICON_BASE64 = """
+iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABHNCSVQICAgIfAhkiAAAAAlwSFlz
+AAALEwAACxMBAJqcGAAAAnxJREFUWIXtl79LHFEQxz+zu3d6nqhgIYKFIoIWgoWFhYX/gIUWFoKF
+hYWFhYUgCBYWFoKFhYWFhYWFhSAIFhYWgoWFhaAgKMT4I0rv3O3uzFvsnt6dZy4XUpgPhtn3dub7
+fTPvzRsICAj4v0F0S7C4tPylWCq/A8qkEQGpwuT46PBUt3Rd9YDBgfxSPte3CpQJJAIBCIBGvaGf
+v3wVe/P2Q3xyYvR5V9pq84bFpdWVYqn8lOQ0IhRAKJ8mwWQ+l9sYG8m/6ERuq4WFxdWVoXz/KpAj
+Ddd6hQjl0wQohNV67cnrt+86srBNACwurX4ulsoPgH5dAgKQJIAk0uT+bUjSsdy3sb+AMrZNsLS8
+9rVYKj8C+hACSQJJIkkkCcAECW60IWJPHz19Fs/NP+4EwLKd0ZaW17YVy+U5YIBGBkgiSQCSBJRJ
+IzRqb5Xrv3r9dnRy4lHba7FlO6Pl5bW/SqXyQ6CPJBIgoYQQSBJJIkkqZ7SXQOF2O+62LMDq2rfv
+xVL5ATDQKCC7DiSBJJIEJAkoCUBjY0TS0NLKxuTk+O1WpJYlWF1d/1EslucZzPcLQSiBpBACkqTJ
+JaAMqLSuKG93RHRpZX1ycmKk5SHUcuLq6vqvYrE8xyCDQgRCCCEEJJEkkiRuFiFA6O4P4eLS8uRE
+s0t6uQRraxu/i6XyPWCAWgIh0DxQCEnSNAdQurJJqV68ebdJX65vqh1rSwmsrG78KZbK94FBGglI
+gqBxDqjb9QzWlv6ZPPH67YdNivl+s+u4ZQnW1jb+FEvle8BgSwJSJxdAJC0+3/fq7YdN0r3xWlor
+sL6x+bdYLN8FBhtPQSGIpIv+Hn4AvwFyqKVKezaohAAAAABJRU5ErkJggg==
+"""
 
 # Days options for dropdown
 DAYS_OPTIONS = ['2 days', '3 days', '7 days', '14 days']
@@ -43,252 +55,789 @@ DAYS_MAP = {'2 days': 2, '3 days': 3, '7 days': 7, '14 days': 14}
 APP_VERSION = "1.0.0"
 APP_TITLE = "Crash Detective"
 
+# Application Error Event IDs
+# 1000 = Application Error
+# 1001 = Windows Error Reporting
+# 1002 = Application Hang
+APPLICATION_ERROR_EVENT_IDS = [1000, 1001, 1002]
+
+# Common binary folder names in games
+# These folders typically contain the .exe but are not the "root" game folder
+BINARY_FOLDER_PATTERNS = [
+    'bin', 'binaries', 'binary',
+    'x64', 'x86', 'win64', 'win32',
+    'game', 'build', 'out', 'output',
+    'release', 'debug', 'shipping',
+    'engine', 'runtime', 'launcher',
+]
+
+# Crash code translations - User-friendly error interpretations
+# Keys are patterns to search for (case-insensitive)
+# Values are human-readable explanations
+CRASH_TRANSLATIONS = {
+    # Memory and access violations
+    '0xc0000005': 'ACCESS VIOLATION: Likely corrupted files or memory issue.',
+    '0xc0000374': 'HEAP CORRUPTION: Internal game error.',
+    '0xc00000fd': 'STACK OVERFLOW: Infinite loop or mod conflict.',
+    '0xc0000409': 'STACK BUFFER OVERRUN: Game security or anti-cheat issue.',
+    
+    # CPU and instruction errors
+    '0xc000001d': 'ILLEGAL INSTRUCTION: CPU incompatibility or corrupted game files.',
+    
+    # DLL and initialization errors
+    '0xc0000142': 'DLL INIT FAILED: Missing Visual C++ Redistributable or corrupted DLLs.',
+    
+    # Debugging and breakpoints
+    '0x80000003': 'BREAKPOINT: Debugger attached or anti-tamper triggered.',
+    
+    # GPU and graphics errors
+    'nvwgf': 'GPU ERROR: Graphics driver crash (NVIDIA).',
+    'd3d11': 'GPU ERROR: Graphics driver crash (Direct3D 11).',
+    'dxgi': 'DirectX ERROR: Graphics API crash, update DirectX.',
+    
+    # Game engine errors
+    'unity': 'UNITY ENGINE: Game engine crash, verify game files.',
+    'unreal': 'UNREAL ENGINE: Game engine crash, verify game files.',
+    'ue4': 'UNREAL ENGINE: Game engine crash, verify game files.',
+}
+
+# Dark theme stylesheet
+DARK_STYLESHEET = """
+QMainWindow {
+    background-color: #1e1e2e;
+}
+QWidget {
+    background-color: #1e1e2e;
+    color: #cdd6f4;
+    font-family: 'Segoe UI', Arial, sans-serif;
+}
+QLabel {
+    color: #cdd6f4;
+    font-size: 14px;
+}
+QLabel#title {
+    color: #89b4fa;
+    font-size: 22px;
+    font-weight: bold;
+}
+QLineEdit {
+    background-color: #313244;
+    border: 1px solid #45475a;
+    border-radius: 4px;
+    padding: 8px;
+    color: #cdd6f4;
+    font-size: 13px;
+}
+QLineEdit:focus {
+    border: 1px solid #89b4fa;
+}
+QPushButton {
+    background-color: #1a5fb4;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 10px 18px;
+    font-size: 13px;
+    font-weight: bold;
+}
+QPushButton:hover {
+    background-color: #2d7cd6;
+}
+QPushButton:pressed {
+    background-color: #155099;
+}
+QPushButton#searchBtn {
+    background-color: #1a5fb4;
+    font-size: 15px;
+    padding: 12px 24px;
+}
+QPushButton#copyBtn {
+    background-color: #26a269;
+    font-size: 15px;
+    padding: 14px 28px;
+}
+QPushButton#copyBtn:hover {
+    background-color: #33b978;
+}
+QPushButton#browseBtn {
+    background-color: #45475a;
+    padding: 6px 12px;
+}
+QComboBox {
+    background-color: #313244;
+    border: 1px solid #45475a;
+    border-radius: 4px;
+    padding: 8px 12px;
+    color: #cdd6f4;
+    font-size: 13px;
+    min-width: 120px;
+}
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 25px;
+    border-left: 1px solid #45475a;
+    background-color: #45475a;
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+}
+QComboBox::down-arrow {
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 6px solid #cdd6f4;
+}
+QComboBox QAbstractItemView {
+    background-color: #313244;
+    border: 1px solid #45475a;
+    selection-background-color: #1a5fb4;
+    color: #cdd6f4;
+    font-size: 13px;
+}
+QCheckBox {
+    color: #cdd6f4;
+    font-size: 13px;
+    spacing: 10px;
+}
+QCheckBox::indicator {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    border: 2px solid #45475a;
+    background-color: #313244;
+}
+QCheckBox::indicator:checked {
+    background-color: #1a5fb4;
+    border-color: #1a5fb4;
+}
+QTextEdit {
+    background-color: #11111b;
+    border: 1px solid #45475a;
+    border-radius: 4px;
+    padding: 10px;
+    color: #cdd6f4;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.4;
+}
+QFrame#separator {
+    background-color: #45475a;
+    max-height: 1px;
+}
+"""
+
+
 # ============================================================================
-# GUI LAYOUT
+# GAME FOLDER DETECTION
 # ============================================================================
 
-def create_layout():
-    """Creates and returns the graphical interface layout."""
-    
-    # Dark theme
-    sg.theme('DarkBlue3')
-    
-    # File selection section
-    file_section = [
-        [sg.Text('Executable file:', font=('Segoe UI', 10))],
-        [
-            sg.Input(key='-EXE_PATH-', size=(50, 1), enable_events=True),
-            sg.FileBrowse(
-                'Browse...', 
-                file_types=(("Executables", "*.exe"), ("All files", "*.*")),
-                key='-BROWSE-'
-            )
-        ]
-    ]
-    
-    # Options section
-    options_section = [
-        [
-            sg.Text('Search period:', font=('Segoe UI', 10)),
-            sg.Combo(
-                DAYS_OPTIONS, 
-                default_value='2 days', 
-                key='-DAYS-', 
-                size=(10, 1),
-                readonly=True
-            ),
-            sg.Push(),
-            sg.Checkbox(
-                'Deep Scan (fuzzy matching)', 
-                key='-DEEP_SCAN-', 
-                font=('Segoe UI', 10),
-                tooltip='Enable approximate search to find name variants'
-            )
-        ]
-    ]
-    
-    # Search button
-    search_section = [
-        [
-            sg.Button(
-                '🔍 Search Crashes', 
-                key='-SEARCH-', 
-                size=(20, 1),
-                font=('Segoe UI', 11, 'bold'),
-                button_color=('white', '#1a5fb4')
-            )
-        ]
-    ]
-    
-    # Results area
-    results_section = [
-        [sg.Text('Results:', font=('Segoe UI', 10, 'bold'))],
-        [
-            sg.Multiline(
-                size=(70, 20),
-                key='-RESULTS-',
-                font=('Consolas', 9),
-                disabled=True,
-                autoscroll=True,
-                expand_x=True,
-                expand_y=True
-            )
-        ]
-    ]
-    
-    # Copy button
-    copy_section = [
-        [
-            sg.Button(
-                '📋 Copy Report to Clipboard',
-                key='-COPY-',
-                size=(30, 2),
-                font=('Segoe UI', 11, 'bold'),
-                button_color=('white', '#26a269')
-            )
-        ]
-    ]
-    
-    # Complete layout
-    layout = [
-        [sg.Text(f'🔎 {APP_TITLE}', font=('Segoe UI', 16, 'bold'), text_color='#62a0ea')],
-        [sg.HorizontalSeparator()],
-        *file_section,
-        [sg.Text('')],  # Spacer
-        *options_section,
-        [sg.Text('')],  # Spacer
-        *search_section,
-        [sg.HorizontalSeparator()],
-        *results_section,
-        [sg.HorizontalSeparator()],
-        *copy_section,
-        [sg.Text(f'v{APP_VERSION}', font=('Segoe UI', 8), text_color='gray', justification='right', expand_x=True)]
-    ]
-    
-    return layout
-
-
-# ============================================================================
-# EVENT HANDLERS (PLACEHOLDERS)
-# ============================================================================
-
-def handle_search(values):
+def get_game_root_folder(exe_path):
     """
-    Placeholder handler for the search event.
-    TODO: Implement in Phase 2 - Event Log search.
+    Detect the game's root folder by traversing up from the .exe location.
+    
+    Games often have .exe files in subfolders like:
+    - C:/Games/Stellar Blade/bin/sb.exe -> root is "Stellar Blade"
+    - C:/Games/Game/Binaries/Win64/game.exe -> root is "Game"
+    
+    This function identifies common binary folder patterns and goes up
+    to find the actual game folder.
+    
+    Args:
+        exe_path: Full path to the .exe file
+        
+    Returns:
+        tuple: (game_root_path, game_folder_name)
+               game_root_path is the full path to the game's root folder
+               game_folder_name is just the folder name
     """
-    exe_path = values['-EXE_PATH-']
-    days_str = values['-DAYS-']
-    deep_scan = values['-DEEP_SCAN-']
+    exe_dir = os.path.dirname(os.path.abspath(exe_path))
+    current_path = exe_dir
     
-    days = DAYS_MAP.get(days_str, 2)
+    # Keep track of how many levels we've gone up (limit to prevent going too high)
+    max_levels = 4
+    levels_up = 0
     
-    if not exe_path:
-        return "⚠️ Please select an executable file."
+    while levels_up < max_levels:
+        folder_name = os.path.basename(current_path)
+        folder_name_lower = folder_name.lower()
+        
+        # Check if current folder is a binary folder pattern
+        is_binary_folder = False
+        for pattern in BINARY_FOLDER_PATTERNS:
+            if pattern in folder_name_lower:
+                is_binary_folder = True
+                break
+        
+        if is_binary_folder:
+            # Go up one level
+            parent = os.path.dirname(current_path)
+            if parent == current_path:  # Reached root
+                break
+            current_path = parent
+            levels_up += 1
+        else:
+            # This folder doesn't match binary patterns, consider it the game root
+            break
     
-    if not os.path.exists(exe_path):
-        return f"❌ File does not exist: {exe_path}"
+    # Safety check: don't return drive root or common folders
+    folder_name = os.path.basename(current_path)
+    folder_name_lower = folder_name.lower()
     
-    exe_name = os.path.basename(exe_path)
+    # Avoid returning too generic folders
+    generic_folders = ['games', 'program files', 'program files (x86)', 'steam', 'steamapps', 'common', 'users', '']
+    if folder_name_lower in generic_folders:
+        # Return the original exe directory instead
+        return exe_dir, os.path.basename(exe_dir)
     
-    # Placeholder - debug message
-    result = f"""╔══════════════════════════════════════════════════════════════╗
+    return current_path, folder_name
+
+
+# ============================================================================
+# EVENT LOG READING
+# ============================================================================
+
+def read_application_logs(days):
+    """
+    Read Windows Application Event Logs for crash events.
+    
+    Args:
+        days: Number of days to look back for events
+        
+    Returns:
+        tuple: (list of log entries, error message or None)
+        Each log entry is a dict with keys:
+            - timestamp: datetime object
+            - source: event source name
+            - event_id: event ID number
+            - message: event message/description
+            - raw_data: additional data from the event
+    """
+    logs = []
+    error_msg = None
+    
+    # Calculate time threshold
+    time_threshold = datetime.now() - timedelta(days=days)
+    
+    try:
+        # Open the Application event log
+        hand = win32evtlog.OpenEventLog(None, "Application")
+        
+        if not hand:
+            return [], "Failed to open Application Event Log"
+        
+        try:
+            flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
+            
+            while True:
+                events = win32evtlog.ReadEventLog(hand, flags, 0)
+                
+                if not events:
+                    break
+                
+                for event in events:
+                    # Get event timestamp
+                    event_time = event.TimeGenerated
+                    
+                    # Convert pywintypes.datetime to Python datetime if needed
+                    if hasattr(event_time, 'Format'):
+                        event_time = datetime(
+                            event_time.year,
+                            event_time.month,
+                            event_time.day,
+                            event_time.hour,
+                            event_time.minute,
+                            event_time.second
+                        )
+                    
+                    # Stop if event is older than threshold
+                    if event_time < time_threshold:
+                        # Since we're reading backwards, we can stop here
+                        break
+                    
+                    # Filter by event type (Error = 1)
+                    event_type = event.EventType
+                    if event_type != win32con.EVENTLOG_ERROR_TYPE:
+                        continue
+                    
+                    # Get Event ID (mask to get actual ID)
+                    event_id = event.EventID & 0xFFFF
+                    
+                    # Filter by specific crash-related Event IDs
+                    if event_id not in APPLICATION_ERROR_EVENT_IDS:
+                        continue
+                    
+                    # Extract event message
+                    message = ""
+                    if event.StringInserts:
+                        message = " | ".join([str(s) for s in event.StringInserts if s])
+                    
+                    # Get additional data
+                    raw_data = ""
+                    if event.Data:
+                        try:
+                            raw_data = event.Data.decode('utf-8', errors='ignore')
+                        except:
+                            raw_data = str(event.Data)
+                    
+                    log_entry = {
+                        'timestamp': event_time,
+                        'source': event.SourceName or "Unknown",
+                        'event_id': event_id,
+                        'message': message,
+                        'raw_data': raw_data
+                    }
+                    logs.append(log_entry)
+                
+                # Check if we've gone past the time threshold
+                if events and event_time < time_threshold:
+                    break
+                    
+        finally:
+            win32evtlog.CloseEventLog(hand)
+            
+    except PermissionError:
+        error_msg = "❌ Access denied. Please run as Administrator."
+    except pywintypes.error as e:
+        # Handle Windows-specific errors
+        error_code = e.args[0] if e.args else 0
+        if error_code == 5:  # Access denied
+            error_msg = "❌ Access denied. Please run as Administrator."
+        else:
+            error_msg = f"❌ Windows Error: {str(e)}"
+    except Exception as e:
+        error_msg = f"❌ Error reading Event Log: {str(e)}"
+    
+    return logs, error_msg
+
+
+# ============================================================================
+# CRASH INTERPRETATION
+# ============================================================================
+
+def interpret_crash(log_message):
+    """
+    Interpret crash log message and return user-friendly translations.
+    
+    Args:
+        log_message: The log message text to analyze
+        
+    Returns:
+        list: List of matching translations, or default message if none found
+    """
+    if not log_message:
+        return ["No specific error pattern detected."]
+    
+    message_lower = log_message.lower()
+    translations = []
+    
+    # Check each pattern against the message
+    for pattern, translation in CRASH_TRANSLATIONS.items():
+        if pattern.lower() in message_lower:
+            translations.append(translation)
+    
+    # Return translations found, or default message
+    if translations:
+        return translations
+    else:
+        return ["No specific error pattern detected."]
+
+
+# ============================================================================
+# MAIN WINDOW
+# ============================================================================
+
+class CrashDetectiveWindow(QMainWindow):
+    """Main window for Crash Detective application."""
+    
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle(f"Crash Detective")
+        self.setMinimumSize(700, 600)
+        self.resize(750, 650)
+        
+        # Set window icon
+        self._set_window_icon()
+        
+        # Set dark theme
+        self.setStyleSheet(DARK_STYLESHEET)
+        
+        # Create central widget and layout
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setSpacing(12)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Title
+        title_label = QLabel(f"🔎 {APP_TITLE}")
+        title_label.setObjectName("title")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(title_label)
+        
+        # Separator
+        main_layout.addWidget(self._create_separator())
+        
+        # File selection section
+        file_label = QLabel("Executable file:")
+        main_layout.addWidget(file_label)
+        
+        file_layout = QHBoxLayout()
+        self.exe_path_input = QLineEdit()
+        self.exe_path_input.setPlaceholderText("Select an executable file...")
+        self.exe_path_input.textChanged.connect(self._on_file_changed)
+        file_layout.addWidget(self.exe_path_input)
+        
+        browse_btn = QPushButton("Browse...")
+        browse_btn.setObjectName("browseBtn")
+        browse_btn.clicked.connect(self._browse_file)
+        file_layout.addWidget(browse_btn)
+        main_layout.addLayout(file_layout)
+        
+        # Options section
+        options_layout = QHBoxLayout()
+        
+        period_label = QLabel("Search period:")
+        options_layout.addWidget(period_label)
+        
+        self.days_combo = QComboBox()
+        self.days_combo.addItems(DAYS_OPTIONS)
+        self.days_combo.setCurrentText("2 days")
+        options_layout.addWidget(self.days_combo)
+        
+        options_layout.addStretch()
+        
+        self.deep_scan_checkbox = QCheckBox("Deep Scan")
+        options_layout.addWidget(self.deep_scan_checkbox)
+        
+        main_layout.addLayout(options_layout)
+        
+        # Search button
+        search_layout = QHBoxLayout()
+        search_layout.addStretch()
+        self.search_btn = QPushButton("🔍 Search Crashes")
+        self.search_btn.setObjectName("searchBtn")
+        self.search_btn.clicked.connect(self._search_crashes)
+        search_layout.addWidget(self.search_btn)
+        search_layout.addStretch()
+        main_layout.addLayout(search_layout)
+        
+        # Separator
+        main_layout.addWidget(self._create_separator())
+        
+        # Results section
+        results_label = QLabel("Results:")
+        results_label.setStyleSheet("font-weight: bold;")
+        main_layout.addWidget(results_label)
+        
+        self.results_text = QTextEdit()
+        self.results_text.setReadOnly(True)
+        self.results_text.setMinimumHeight(250)
+        main_layout.addWidget(self.results_text, 1)
+        
+        # Separator
+        main_layout.addWidget(self._create_separator())
+        
+        # Copy button
+        copy_layout = QHBoxLayout()
+        copy_layout.addStretch()
+        self.copy_btn = QPushButton("📋 Copy Report to Clipboard")
+        self.copy_btn.setObjectName("copyBtn")
+        self.copy_btn.clicked.connect(self._copy_to_clipboard)
+        copy_layout.addWidget(self.copy_btn)
+        copy_layout.addStretch()
+        main_layout.addLayout(copy_layout)
+        
+        # Version label
+        version_label = QLabel(f"v{APP_VERSION}")
+        version_label.setStyleSheet("color: gray; font-size: 9px;")
+        version_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        main_layout.addWidget(version_label)
+    
+    def _create_separator(self):
+        """Create a horizontal separator line."""
+        separator = QFrame()
+        separator.setObjectName("separator")
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setFixedHeight(1)
+        return separator
+    
+    def _set_window_icon(self):
+        """Set the window icon - create a simple magnifying glass icon."""
+        try:
+            # Create a simple 32x32 pixmap as icon
+            from PyQt6.QtGui import QPainter, QColor, QPen, QBrush
+            from PyQt6.QtCore import QPoint
+            
+            pixmap = QPixmap(32, 32)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            
+            # Draw magnifying glass
+            pen = QPen(QColor("#89b4fa"))
+            pen.setWidth(3)
+            painter.setPen(pen)
+            painter.setBrush(QBrush(QColor("#313244")))
+            
+            # Circle (lens)
+            painter.drawEllipse(4, 4, 18, 18)
+            
+            # Handle
+            pen.setWidth(4)
+            painter.setPen(pen)
+            painter.drawLine(QPoint(19, 19), QPoint(28, 28))
+            
+            painter.end()
+            
+            self.setWindowIcon(QIcon(pixmap))
+        except Exception:
+            pass  # Use default icon if creation fails
+    
+    def _browse_file(self):
+        """Open file browser dialog."""
+        initial_dir = os.path.dirname(os.path.abspath(__file__))
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Executable",
+            initial_dir,
+            "Executables (*.exe);;All files (*.*)"
+        )
+        if file_path:
+            self.exe_path_input.setText(file_path)
+    
+    def _on_file_changed(self, text):
+        """Handle file path change - auto-search when file is selected."""
+        if text and os.path.exists(text) and text.lower().endswith('.exe'):
+            # Auto-search when a valid exe is selected
+            self._search_crashes()
+    
+    def _search_crashes(self):
+        """Perform crash search."""
+        self.results_text.setText("🔄 Searching...")
+        QApplication.processEvents()
+        
+        result = self._handle_search()
+        self.results_text.setText(result)
+    
+    def _handle_search(self):
+        """
+        Handler for the search event.
+        Reads Windows Event Log and searches for crash events.
+        """
+        exe_path = self.exe_path_input.text()
+        days_str = self.days_combo.currentText()
+        deep_scan = self.deep_scan_checkbox.isChecked()
+        
+        days = DAYS_MAP.get(days_str, 2)
+        
+        if not exe_path:
+            return "⚠️ Please select an executable file."
+        
+        if not os.path.exists(exe_path):
+            return f"❌ File does not exist: {exe_path}"
+        
+        exe_name = os.path.basename(exe_path)
+        exe_name_lower = exe_name.lower()
+        exe_name_no_ext = os.path.splitext(exe_name)[0].lower()
+        
+        # Get game root folder for Deep Scan
+        game_root_path, game_folder_name = get_game_root_folder(exe_path)
+        game_folder_lower = game_folder_name.lower()
+        
+        # Normalize path separators for matching
+        game_root_normalized = game_root_path.replace('\\', '/').lower()
+        
+        # Build header
+        deep_scan_info = 'Disabled'
+        if deep_scan:
+            deep_scan_info = f'Enabled (Game folder: {game_folder_name})'
+        
+        result = f"""╔══════════════════════════════════════════════════════════════╗
 ║                    CRASH DETECTIVE                              ║
 ╚══════════════════════════════════════════════════════════════╝
 
 📁 File: {exe_name}
 📂 Path: {exe_path}
+🎮 Game Folder: {game_root_path}
 📅 Period: Last {days} days
-🔬 Deep Scan: {'Enabled' if deep_scan else 'Disabled'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🔄 Searching for crashes in Windows Event Log...
-
-[PLACEHOLDER] Search function will be implemented in Phase 2.
+🔬 Deep Scan: {deep_scan_info}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-    
-    return result
-
-
-def handle_copy(window, results_text):
-    """
-    Handler to copy results to clipboard.
-    """
-    if not results_text or results_text.strip() == '':
-        sg.popup_quick_message(
-            '⚠️ No results to copy',
-            background_color='#c64600',
-            text_color='white',
-            font=('Segoe UI', 10)
-        )
-        return False
-    
-    try:
-        # Use Tkinter clipboard via PySimpleGUI
-        window.TKroot.clipboard_clear()
-        window.TKroot.clipboard_append(results_text)
-        window.TKroot.update()
         
-        sg.popup_quick_message(
-            '✅ Report copied to clipboard',
-            background_color='#26a269',
-            text_color='white',
-            font=('Segoe UI', 10)
-        )
-        return True
-    except Exception as e:
-        sg.popup_error(f'Error copying: {str(e)}')
-        return False
-
-
-# ============================================================================
-# MAIN WINDOW & EVENT LOOP
-# ============================================================================
-
-def create_window():
-    """Creates and returns the main window."""
-    layout = create_layout()
-    
-    window = sg.Window(
-        APP_TITLE,
-        layout,
-        icon=ICON_BASE64,
-        resizable=True,
-        finalize=True,
-        size=(700, 600),
-        element_justification='center'
-    )
-    
-    return window
-
-
-def main():
-    """Main function - Event Loop."""
-    
-    # Create window
-    window = create_window()
-    
-    # Variable to store current results
-    current_results = ""
-    
-    # Event Loop
-    while True:
-        event, values = window.read()
+        # Read event logs
+        logs, error_msg = read_application_logs(days)
         
-        # Close window
-        if event in (sg.WIN_CLOSED, 'Exit', None):
-            break
+        # Check for errors
+        if error_msg:
+            result += f"\n{error_msg}\n"
+            return result
         
-        # Event: Search
-        if event == '-SEARCH-':
-            window['-RESULTS-'].update('🔄 Searching...')
-            window.refresh()
+        # Filter logs matching the executable
+        matching_logs = []
+        
+        for log in logs:
+            source_lower = log['source'].lower()
+            message_lower = log['message'].lower()
+            # Normalize path separators in message for path matching
+            message_normalized = message_lower.replace('\\', '/')
             
-            current_results = handle_search(values)
-            window['-RESULTS-'].update(current_results)
+            # Check for exact match in source or message
+            is_match = False
+            match_reason = ""
+            
+            if exe_name_lower in source_lower or exe_name_lower in message_lower:
+                is_match = True
+                match_reason = "exe name match"
+            elif exe_name_no_ext in source_lower or exe_name_no_ext in message_lower:
+                is_match = True
+                match_reason = "exe name (no ext) match"
+            
+            # Deep scan: use fuzzy matching and game folder path matching
+            if not is_match and deep_scan:
+                # Check similarity ratio with source
+                ratio_source = SequenceMatcher(None, exe_name_no_ext, source_lower).ratio()
+                if ratio_source > 0.6:
+                    is_match = True
+                    match_reason = f"fuzzy match (source: {ratio_source:.0%})"
+                
+                # Check if game folder name appears in message
+                if not is_match and len(game_folder_lower) > 3:
+                    if game_folder_lower in message_lower:
+                        is_match = True
+                        match_reason = f"game folder name match ({game_folder_name})"
+                
+                # Check if game root path appears in message
+                if not is_match and len(game_root_normalized) > 10:
+                    if game_root_normalized in message_normalized:
+                        is_match = True
+                        match_reason = f"game path match"
+                
+                # Check any word in message matches exe name
+                if not is_match:
+                    words = message_lower.split()
+                    for word in words:
+                        if len(word) > 3:  # Skip short words
+                            ratio = SequenceMatcher(None, exe_name_no_ext, word).ratio()
+                            if ratio > 0.6:
+                                is_match = True
+                                match_reason = f"fuzzy match (word: {ratio:.0%})"
+                                break
+            
+            if is_match:
+                log['match_reason'] = match_reason
+                matching_logs.append(log)
         
-        # Event: Copy to clipboard
-        if event == '-COPY-':
-            current_results = values['-RESULTS-']
-            handle_copy(window, current_results)
+        # Display results
+        if not matching_logs:
+            result += f"\n✅ No crash events found for '{exe_name}' in the last {days} days.\n"
+            result += f"\n📊 Total error events scanned: {len(logs)}\n"
+        else:
+            result += f"\n🔴 Found {len(matching_logs)} crash event(s) for '{exe_name}':\n"
+            result += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            
+            for i, log in enumerate(matching_logs, 1):
+                timestamp_str = log['timestamp'].strftime('%Y-%m-%d %H:%M:%S')
+                match_reason = log.get('match_reason', 'direct match')
+                result += f"\n📌 Event #{i}\n"
+                result += f"   ⏰ Time: {timestamp_str}\n"
+                result += f"   📋 Source: {log['source']}\n"
+                result += f"   🔢 Event ID: {log['event_id']}\n"
+                result += f"   🎯 Match: {match_reason}\n"
+                
+                # Format message with descriptive labels
+                message = log['message']
+                if len(message) > 800:
+                    message = message[:800] + "..."
+                
+                # Parse message parts and assign descriptive labels
+                # Windows Event Log 1000 format:
+                # 0: Faulting application name
+                # 1: Version
+                # 2: Timestamp
+                # 3: Faulting module name
+                # 4: Module version
+                # 5: Module timestamp
+                # 6: Exception code
+                # 7: Fault offset
+                # 8: Faulting process ID
+                # 9: Application start time
+                # 10: Application path
+                # 11: Module path
+                # 12: Report ID
+                
+                DETAIL_LABELS = [
+                    "Faulting application name",
+                    "Application version",
+                    "Application timestamp",
+                    "Faulting module name",
+                    "Module version",
+                    "Module timestamp",
+                    "Exception code",
+                    "Fault offset",
+                    "Faulting process ID",
+                    "Application start time",
+                    "Faulting application path",
+                    "Faulting module path",
+                    "Report ID"
+                ]
+                
+                if message:
+                    result += f"   💬 Crash Details:\n"
+                    msg_parts = message.split(' | ')
+                    for idx, part in enumerate(msg_parts[:13]):  # Up to 13 parts
+                        if part.strip():
+                            label = DETAIL_LABELS[idx] if idx < len(DETAIL_LABELS) else f"Field {idx}"
+                            result += f"      • {label}: {part.strip()}\n"
+                
+                if log['raw_data']:
+                    result += f"   📦 Raw Data: {log['raw_data'][:100]}...\n" if len(log['raw_data']) > 100 else f"   📦 Raw Data: {log['raw_data']}\n"
+                
+                # Get crash interpretation
+                full_log_text = message + " " + log.get('raw_data', '')
+                translations = interpret_crash(full_log_text)
+                
+                result += f"   🔍 Translation:\n"
+                for translation in translations:
+                    result += f"      ⚠️ {translation}\n"
+                
+                result += "\n"
+            
+            result += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            result += f"📊 Summary: {len(matching_logs)} crash(es) found out of {len(logs)} total error events.\n"
         
-        # Event: File path change
-        if event == '-EXE_PATH-':
-            exe_path = values['-EXE_PATH-']
-            if exe_path and os.path.exists(exe_path):
-                exe_name = os.path.basename(exe_path)
-                window['-RESULTS-'].update(f'📁 File selected: {exe_name}\n\nPress "Search Crashes" to start the search.')
+        return result
     
-    # Close window
-    window.close()
+    def _copy_to_clipboard(self):
+        """Copy results to clipboard."""
+        results_text = self.results_text.toPlainText()
+        
+        if not results_text or results_text.strip() == '':
+            QMessageBox.warning(self, "Warning", "⚠️ No results to copy")
+            return
+        
+        clipboard = QApplication.clipboard()
+        clipboard.setText(results_text)
+        
+        QMessageBox.information(self, "Success", "✅ Report copied to clipboard")
 
 
 # ============================================================================
 # ENTRY POINT
 # ============================================================================
+
+def main():
+    """Main function - Application entry point."""
+    app = QApplication(sys.argv)
+    app.setStyle('Fusion')
+    
+    window = CrashDetectiveWindow()
+    window.show()
+    
+    sys.exit(app.exec())
+
 
 if __name__ == '__main__':
     main()
