@@ -20,7 +20,7 @@ import os
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QComboBox, QCheckBox, 
+    QLabel, QLineEdit, QPushButton, QComboBox,
     QTextEdit, QFileDialog, QMessageBox, QFrame, QStyle, QStyleOptionComboBox,
     QStyleOptionButton, QProxyStyle
 )
@@ -151,30 +151,178 @@ BINARY_FOLDER_PATTERNS = [
 # Keys are patterns to search for (case-insensitive)
 # Values are human-readable explanations
 CRASH_TRANSLATIONS = {
-    # Memory and access violations
+    # ================================================================
+    # NTSTATUS EXCEPTION CODES - Memory and Access Violations
+    # ================================================================
     '0xc0000005': 'ACCESS VIOLATION: Likely corrupted files or memory issue.',
     '0xc0000374': 'HEAP CORRUPTION: Internal game error.',
     '0xc00000fd': 'STACK OVERFLOW: Infinite loop or mod conflict.',
     '0xc0000409': 'STACK BUFFER OVERRUN: Game security or anti-cheat issue.',
-    
-    # CPU and instruction errors
+    '0xc0000008': 'INVALID HANDLE: Corrupted files or driver conflict.',
+    '0xc0000017': 'NO MEMORY: System ran out of memory, close other apps.',
+    '0xc000009a': 'INSUFFICIENT RESOURCES: Not enough system resources.',
+    '0xc0000006': 'IN-PAGE ERROR: Disk read failure, check your hard drive.',
+
+    # ================================================================
+    # NTSTATUS EXCEPTION CODES - CPU and Instruction Errors
+    # ================================================================
     '0xc000001d': 'ILLEGAL INSTRUCTION: CPU incompatibility or corrupted game files.',
-    
-    # DLL and initialization errors
+    '0xc000001e': 'INVALID LOCK SEQUENCE: Thread synchronization error.',
+    '0xc0000025': 'NONCONTINUABLE EXCEPTION: Fatal error, cannot recover.',
+    '0xc0000026': 'INVALID DISPOSITION: Bad exception handler, corrupted files.',
+    '0xc000008c': 'ARRAY BOUNDS EXCEEDED: Memory overrun, verify game files.',
+    '0xc000008d': 'FLOAT DENORMAL: Floating-point math error in application.',
+    '0xc000008e': 'FLOAT DIVIDE BY ZERO: Math error, likely a game bug.',
+    '0xc000008f': 'FLOAT INEXACT RESULT: Floating-point precision error.',
+    '0xc0000090': 'FLOAT INVALID OPERATION: Invalid math operation in app.',
+    '0xc0000091': 'FLOAT OVERFLOW: Number too large, possible game bug.',
+    '0xc0000092': 'FLOAT STACK CHECK: Floating-point stack error.',
+    '0xc0000093': 'FLOAT UNDERFLOW: Number too small, possible game bug.',
+    '0xc0000094': 'INTEGER DIVIDE BY ZERO: Math error, verify game files.',
+    '0xc0000095': 'INTEGER OVERFLOW: Number too large, possible game bug.',
+    '0xc0000096': 'PRIVILEGED INSTRUCTION: App tried restricted CPU op.',
+
+    # ================================================================
+    # NTSTATUS EXCEPTION CODES - DLL and Initialization
+    # ================================================================
     '0xc0000142': 'DLL INIT FAILED: Missing Visual C++ Redistributable or corrupted DLLs.',
-    
-    # Debugging and breakpoints
+    '0xc0000135': 'DLL NOT FOUND: Missing runtime DLL, reinstall the app.',
+    '0xc000007b': 'INVALID IMAGE: 32/64-bit mismatch or corrupted files.',
+    '0xc0000018': 'CONFLICTING ADDRESSES: DLL load conflict, reinstall app.',
+    '0xc000012f': 'BAD IMAGE: Corrupted executable or DLL file.',
+    '0xc0000020': 'INVALID FILE FOR SECTION: Corrupted DLL or EXE file.',
+
+    # ================================================================
+    # .NET / CLR EXCEPTION CODES
+    # ================================================================
+    '0xe0434352': '.NET CLR EXCEPTION: .NET app crash, repair/reinstall .NET.',
+    '0xe0434f4d': '.NET COM ERROR: .NET COM interop failure.',
+    '0xe06d7363': 'C++ EXCEPTION: Unhandled Visual C++ exception thrown.',
+
+    # ================================================================
+    # DEBUGGING AND SPECIAL CODES
+    # ================================================================
     '0x80000003': 'BREAKPOINT: Debugger attached or anti-tamper triggered.',
-    
-    # GPU and graphics errors
+    '0x80000004': 'SINGLE STEP: Debugging trace detected.',
+    '0x40000015': 'FATAL APP EXIT: App called abort(), critical error.',
+    '0x40010006': 'CTRL+C EXIT: App terminated by user or script.',
+    '0xc0000602': 'UNKNOWN SOFTWARE EXCEPTION: Fail-fast or critical error.',
+    '0xc00000f0': 'STATUS CANCELLED: Operation was cancelled unexpectedly.',
+
+    # ================================================================
+    # VISUAL C++ RUNTIME ERRORS
+    # ================================================================
+    '0x40000016': 'FATAL USER CALLBACK: C runtime callback error.',
+    '0xc0000417': 'INVALID C RUNTIME PARAM: Bad parameter in C runtime call.',
+
+    # ================================================================
+    # GPU AND GRAPHICS ERRORS - NVIDIA
+    # ================================================================
     'nvwgf': 'GPU ERROR: Graphics driver crash (NVIDIA).',
+    'nvlddmkm': 'GPU ERROR: NVIDIA kernel driver crash, update drivers.',
+    'nvoglv': 'GPU ERROR: NVIDIA OpenGL driver crash, update drivers.',
+    'nvd3dum': 'GPU ERROR: NVIDIA Direct3D driver crash, update drivers.',
+    'nvcuda': 'GPU ERROR: NVIDIA CUDA driver crash, update drivers.',
+
+    # ================================================================
+    # GPU AND GRAPHICS ERRORS - AMD/ATI
+    # ================================================================
+    'atidxx': 'GPU ERROR: AMD/ATI Direct3D driver crash, update drivers.',
+    'amdxc': 'GPU ERROR: AMD DirectX driver crash, update drivers.',
+    'atioglxx': 'GPU ERROR: AMD/ATI OpenGL driver crash, update drivers.',
+    'atig6pxx': 'GPU ERROR: AMD graphics driver crash, update drivers.',
+    'amdkmdap': 'GPU ERROR: AMD kernel driver crash, update drivers.',
+
+    # ================================================================
+    # GPU AND GRAPHICS ERRORS - DirectX / Generic
+    # ================================================================
     'd3d11': 'GPU ERROR: Graphics driver crash (Direct3D 11).',
+    'd3d12': 'GPU ERROR: Direct3D 12 crash, update GPU drivers.',
+    'd3d10': 'GPU ERROR: Direct3D 10 crash, update GPU drivers.',
+    'd3d9': 'GPU ERROR: Direct3D 9 crash, install legacy DirectX.',
     'dxgi': 'DirectX ERROR: Graphics API crash, update DirectX.',
-    
-    # Game engine errors
+    'd3dcompiler': 'DirectX ERROR: Shader compiler crash, update DirectX.',
+    'dxcore': 'DirectX ERROR: DirectX core crash, update Windows.',
+    'igdumdim': 'GPU ERROR: Intel graphics driver crash, update drivers.',
+    'igdkmd': 'GPU ERROR: Intel kernel graphics crash, update drivers.',
+    'ig4icd': 'GPU ERROR: Intel legacy GPU driver crash, update drivers.',
+
+    # ================================================================
+    # COMMON FAULTING MODULES - Windows System DLLs
+    # ================================================================
+    'ntdll.dll': 'SYSTEM DLL: Low-level Windows crash, check for updates.',
+    'kernelbase.dll': 'KERNEL ERROR: Windows API crash, update Windows.',
+    'kernel32.dll': 'KERNEL ERROR: Core Windows crash, system needs update.',
+    'ucrtbase.dll': 'C RUNTIME: Universal C Runtime crash, repair Visual C++.',
+    'msvcrt.dll': 'C RUNTIME: Visual C++ runtime crash, reinstall VC++.',
+    'msvcr100.dll': 'VC++ 2010 RUNTIME: Reinstall VC++ 2010 Redistributable.',
+    'msvcr110.dll': 'VC++ 2012 RUNTIME: Reinstall VC++ 2012 Redistributable.',
+    'msvcr120.dll': 'VC++ 2013 RUNTIME: Reinstall VC++ 2013 Redistributable.',
+    'msvcp140.dll': 'VC++ 2015+ RUNTIME: Reinstall VC++ 2015-2022 Redist.',
+    'vcruntime140.dll': 'VC++ RUNTIME: Reinstall VC++ 2015-2022 Redistributable.',
+    'concrt140.dll': 'VC++ CONCURRENCY: Reinstall VC++ 2015-2022 Redist.',
+
+    # ================================================================
+    # COMMON FAULTING MODULES - .NET / CLR
+    # ================================================================
+    'clr.dll': '.NET CLR CRASH: .NET Framework runtime error, repair .NET.',
+    'coreclr.dll': '.NET CORE CRASH: .NET Core/5+ runtime error.',
+    'clrjit.dll': '.NET JIT CRASH: .NET JIT compiler error, repair .NET.',
+    'mscorwks.dll': '.NET 2.0 CRASH: Old .NET Framework error, update .NET.',
+    'mscorlib': '.NET LIBRARY CRASH: .NET base library error.',
+    'wpfgfx': 'WPF CRASH: .NET WPF graphics subsystem crash.',
+
+    # ================================================================
+    # ANTI-CHEAT SYSTEMS
+    # ================================================================
+    'easyanticheat': 'ANTI-CHEAT: EasyAntiCheat crash. Repair or reinstall.',
+    'eac_launcher': 'ANTI-CHEAT: EasyAntiCheat launcher error, repair EAC.',
+    'battleye': 'ANTI-CHEAT: BattlEye crash, verify game files.',
+    'beclient': 'ANTI-CHEAT: BattlEye client crash, reinstall BattlEye.',
+    'beservice': 'ANTI-CHEAT: BattlEye service crash, reinstall BattlEye.',
+    'bedaisy': 'ANTI-CHEAT: BattlEye driver error, update Windows.',
+    'vanguard': 'ANTI-CHEAT: Riot Vanguard crash, restart PC.',
+    'vgk.sys': 'ANTI-CHEAT: Riot Vanguard kernel crash, reinstall.',
+    'eossdk': 'EPIC SERVICES: Epic Online Services crash.',
+    'nprotect': 'ANTI-CHEAT: nProtect GameGuard crash, reinstall game.',
+    'xigncode': 'ANTI-CHEAT: XIGNCODE crash, verify game files.',
+
+    # ================================================================
+    # DRM / COPY PROTECTION
+    # ================================================================
+    'denuvo': 'DRM: Denuvo anti-tamper crash, verify game files.',
+    'steam_api': 'STEAM API: Steam integration crash, verify game files.',
+    'steam_api64': 'STEAM API: Steam integration crash, verify game files.',
+    'steamclient': 'STEAM CLIENT: Steam client crash, restart Steam.',
+    'galaxydll': 'GOG GALAXY: GOG Galaxy integration crash.',
+    'uplay_r': 'UBISOFT CONNECT: Ubisoft DRM crash, relaunch client.',
+
+    # ================================================================
+    # GAME ENGINES
+    # ================================================================
     'unity': 'UNITY ENGINE: Game engine crash, verify game files.',
     'unreal': 'UNREAL ENGINE: Game engine crash, verify game files.',
     'ue4': 'UNREAL ENGINE: Game engine crash, verify game files.',
+    'ue5': 'UNREAL ENGINE 5: Game engine crash, verify game files.',
+    'cryengine': 'CRYENGINE: Game engine crash, verify game files.',
+    'frostbite': 'FROSTBITE ENGINE: Game engine crash, verify files.',
+    'gameoverlayrenderer': 'STEAM OVERLAY: Steam overlay crash, disable overlay.',
+    'renderdoc': 'RENDERDOC: Graphics debugger conflict, close RenderDoc.',
+
+    # ================================================================
+    # AUDIO RELATED
+    # ================================================================
+    'xaudio2': 'AUDIO ERROR: XAudio2 crash, reinstall DirectX.',
+    'dsound.dll': 'AUDIO ERROR: DirectSound crash, check audio drivers.',
+    'wwise': 'AUDIO ENGINE: Wwise audio engine crash.',
+    'fmod': 'AUDIO ENGINE: FMOD audio engine crash.',
+
+    # ================================================================
+    # NETWORK / ONLINE
+    # ================================================================
+    'ws2_32.dll': 'NETWORK ERROR: Winsock crash, check network drivers.',
+    'winhttp.dll': 'NETWORK ERROR: HTTP connection crash, check network.',
+    'mswsock.dll': 'NETWORK ERROR: Windows socket provider crash.',
 }
 
 # Dark theme stylesheet
@@ -460,6 +608,149 @@ def read_application_logs(days):
     return logs, error_msg
 
 
+def read_general_logs(days, game_folder_name, game_root_path):
+    """
+    Read BOTH Application and System event logs for any error event
+    that mentions the game folder name or path. This is a last-resort
+    general search with no Event ID filter.
+    
+    Args:
+        days: Number of days to look back for events
+        game_folder_name: Name of the game's root folder
+        game_root_path: Full path to the game's root folder
+        
+    Returns:
+        tuple: (list of log entries, error message or None)
+        Each log entry is a dict with keys:
+            - timestamp, source, event_id, message, raw_data, log_source_name
+    """
+    logs = []
+    error_msg = None
+    max_results = 10
+    
+    # Calculate time threshold
+    time_threshold = datetime.now() - timedelta(days=days)
+    
+    # Prepare search terms
+    folder_lower = game_folder_name.lower() if game_folder_name else ""
+    root_normalized = game_root_path.replace('\\', '/').lower() if game_root_path else ""
+    
+    log_names = ["Application", "System"]
+    
+    for log_name in log_names:
+        if len(logs) >= max_results:
+            break
+        
+        try:
+            hand = win32evtlog.OpenEventLog(None, log_name)
+            
+            if not hand:
+                continue
+            
+            try:
+                flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
+                
+                while True:
+                    if len(logs) >= max_results:
+                        break
+                    
+                    events = win32evtlog.ReadEventLog(hand, flags, 0)
+                    
+                    if not events:
+                        break
+                    
+                    past_threshold = False
+                    for event in events:
+                        if len(logs) >= max_results:
+                            break
+                        
+                        # Get event timestamp
+                        event_time = event.TimeGenerated
+                        
+                        # Convert pywintypes.datetime to Python datetime if needed
+                        if hasattr(event_time, 'Format'):
+                            event_time = datetime(
+                                event_time.year,
+                                event_time.month,
+                                event_time.day,
+                                event_time.hour,
+                                event_time.minute,
+                                event_time.second
+                            )
+                        
+                        # Stop if event is older than threshold
+                        if event_time < time_threshold:
+                            past_threshold = True
+                            break
+                        
+                        # Filter by event type (Error only)
+                        event_type = event.EventType
+                        if event_type != win32con.EVENTLOG_ERROR_TYPE:
+                            continue
+                        
+                        # Get Event ID (mask to get actual ID)
+                        event_id = event.EventID & 0xFFFF
+                        
+                        # Extract event message
+                        message = ""
+                        if event.StringInserts:
+                            message = " | ".join([str(s) for s in event.StringInserts if s])
+                        
+                        message_lower = message.lower()
+                        message_normalized = message_lower.replace('\\', '/')
+                        
+                        # Check if message mentions game folder or path
+                        is_related = False
+                        if len(folder_lower) > 3 and folder_lower in message_lower:
+                            is_related = True
+                        elif len(root_normalized) > 10 and root_normalized in message_normalized:
+                            is_related = True
+                        
+                        if not is_related:
+                            continue
+                        
+                        # Get additional data
+                        raw_data = ""
+                        if event.Data:
+                            try:
+                                raw_data = event.Data.decode('utf-8', errors='ignore')
+                            except:
+                                raw_data = str(event.Data)
+                        
+                        log_entry = {
+                            'timestamp': event_time,
+                            'source': event.SourceName or "Unknown",
+                            'event_id': event_id,
+                            'message': message,
+                            'raw_data': raw_data,
+                            'log_source_name': log_name
+                        }
+                        logs.append(log_entry)
+                    
+                    if past_threshold:
+                        break
+                        
+            finally:
+                win32evtlog.CloseEventLog(hand)
+                
+        except PermissionError:
+            error_msg = "❌ Access denied. Please run as Administrator."
+            break
+        except pywintypes.error as e:
+            error_code = e.args[0] if e.args else 0
+            if error_code == 5:  # Access denied
+                error_msg = "❌ Access denied. Please run as Administrator."
+                break
+            else:
+                error_msg = f"❌ Windows Error reading {log_name} log: {str(e)}"
+                continue
+        except Exception as e:
+            error_msg = f"❌ Error reading {log_name} Event Log: {str(e)}"
+            continue
+    
+    return logs, error_msg
+
+
 # ============================================================================
 # CRASH INTERPRETATION
 # ============================================================================
@@ -555,9 +846,6 @@ class CrashDetectiveWindow(QMainWindow):
         options_layout.addWidget(self.days_combo)
         
         options_layout.addStretch()
-        
-        self.deep_scan_checkbox = QCheckBox("Deep Scan")
-        options_layout.addWidget(self.deep_scan_checkbox)
         
         main_layout.addLayout(options_layout)
         
@@ -677,7 +965,6 @@ class CrashDetectiveWindow(QMainWindow):
         """
         exe_path = self.exe_path_input.text()
         days_str = self.days_combo.currentText()
-        deep_scan = self.deep_scan_checkbox.isChecked()
         
         days = DAYS_MAP.get(days_str, 2)
         
@@ -691,7 +978,7 @@ class CrashDetectiveWindow(QMainWindow):
         exe_name_lower = exe_name.lower()
         exe_name_no_ext = os.path.splitext(exe_name)[0].lower()
         
-        # Get game root folder for Deep Scan
+        # Get game root folder for fuzzy matching
         game_root_path, game_folder_name = get_game_root_folder(exe_path)
         game_folder_lower = game_folder_name.lower()
         
@@ -699,10 +986,6 @@ class CrashDetectiveWindow(QMainWindow):
         game_root_normalized = game_root_path.replace('\\', '/').lower()
         
         # Build header
-        deep_scan_info = 'Disabled'
-        if deep_scan:
-            deep_scan_info = f'Enabled (Game folder: {game_folder_name})'
-        
         result = f"""╔══════════════════════════════════════════════════════════════╗
 ║                    CRASH DETECTIVE                              ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -711,7 +994,6 @@ class CrashDetectiveWindow(QMainWindow):
 📂 Path: {exe_path}
 🎮 Game Folder: {game_root_path}
 📅 Period: Last {days} days
-🔬 Deep Scan: {deep_scan_info}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
@@ -744,8 +1026,8 @@ class CrashDetectiveWindow(QMainWindow):
                 is_match = True
                 match_reason = "exe name (no ext) match"
             
-            # Deep scan: use fuzzy matching and game folder path matching
-            if not is_match and deep_scan:
+            # Fuzzy matching and game folder path matching (auto-fallback)
+            if not is_match:
                 # Check similarity ratio with source
                 ratio_source = SequenceMatcher(None, exe_name_no_ext, source_lower).ratio()
                 if ratio_source > 0.6:
@@ -779,60 +1061,47 @@ class CrashDetectiveWindow(QMainWindow):
                 log['match_reason'] = match_reason
                 matching_logs.append(log)
         
-        # Auto-enable Deep Scan if no results found and it wasn't already enabled
-        auto_deep_scan = False
-        if not matching_logs and not deep_scan:
-            auto_deep_scan = True
-            result += f"\n⚠️ No direct matches found. Automatically enabling Deep Scan...\n"
-            
-            # Re-scan with Deep Scan enabled
-            for log in logs:
-                source_lower = log['source'].lower()
-                message_lower = log['message'].lower()
-                message_normalized = message_lower.replace('\\', '/')
-                
-                is_match = False
-                match_reason = ""
-                
-                # Check similarity ratio with source
-                ratio_source = SequenceMatcher(None, exe_name_no_ext, source_lower).ratio()
-                if ratio_source > 0.6:
-                    is_match = True
-                    match_reason = f"fuzzy match (source: {ratio_source:.0%})"
-                
-                # Check if game folder name appears in message
-                if not is_match and len(game_folder_lower) > 3:
-                    if game_folder_lower in message_lower:
-                        is_match = True
-                        match_reason = f"game folder name match ({game_folder_name})"
-                
-                # Check if game root path appears in message
-                if not is_match and len(game_root_normalized) > 10:
-                    if game_root_normalized in message_normalized:
-                        is_match = True
-                        match_reason = f"game path match"
-                
-                # Check any word in message matches exe name
-                if not is_match:
-                    words = message_lower.split()
-                    for word in words:
-                        if len(word) > 3:
-                            ratio = SequenceMatcher(None, exe_name_no_ext, word).ratio()
-                            if ratio > 0.6:
-                                is_match = True
-                                match_reason = f"fuzzy match (word: {ratio:.0%})"
-                                break
-                
-                if is_match:
-                    log['match_reason'] = match_reason
-                    matching_logs.append(log)
-        
         # Display results
         if not matching_logs:
-            result += f"\n✅ No crash events found for '{exe_name}' in the last {days} days.\n"
-            if auto_deep_scan:
-                result += f"   (Deep Scan was automatically enabled but found no matches)\n"
-            result += f"\n📊 Total error events scanned: {len(logs)}\n"
+            # Try general search as last resort
+            general_logs, general_error = read_general_logs(days, game_folder_name, game_root_path)
+            if general_error:
+                result += f"\n{general_error}\n"
+            elif general_logs:
+                result += f"\n⚠️ No specific crash events found for the executable.\n"
+                result += f"📂 General search: Found {len(general_logs)} error event(s) related to game folder '{game_folder_name}':\n"
+                result += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                
+                for i, log in enumerate(general_logs, 1):
+                    timestamp_str = log['timestamp'].strftime('%Y-%m-%d %H:%M:%S')
+                    result += f"\n📌 Event #{i} [{log['log_source_name']}]\n"
+                    result += f"   ⏰ Time: {timestamp_str}\n"
+                    result += f"   📋 Source: {log['source']}\n"
+                    result += f"   🔢 Event ID: {log['event_id']}\n"
+                    
+                    # Show message (truncated if needed)
+                    message = log['message']
+                    if len(message) > 500:
+                        message = message[:500] + "..."
+                    if message:
+                        result += f"   💬 Details: {message}\n"
+                    
+                    # Run interpret_crash on these
+                    full_log_text = log['message'] + " " + log.get('raw_data', '')
+                    translations = interpret_crash(full_log_text)
+                    result += f"   🔍 Translation:\n"
+                    for t in translations:
+                        result += f"      ⚠️ {t}\n"
+                    
+                    result += "\n"
+                
+                result += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                result += f"📊 Summary: {len(general_logs)} general error(s) found in Application+System logs.\n"
+            else:
+                # Truly nothing found
+                result += f"\n✅ No crash events found for '{exe_name}' in the last {days} days.\n"
+                result += f"   (Searched: exact match → fuzzy match → general folder search)\n"
+                result += f"\n📊 Total crash events scanned: {len(logs)}\n"
         else:
             result += f"\n🔴 Found {len(matching_logs)} crash event(s) for '{exe_name}':\n"
             result += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
