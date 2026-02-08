@@ -21,10 +21,86 @@ import os
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QComboBox, QCheckBox, 
-    QTextEdit, QFileDialog, QMessageBox, QFrame
+    QTextEdit, QFileDialog, QMessageBox, QFrame, QStyle, QStyleOptionComboBox,
+    QStyleOptionButton, QProxyStyle
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QIcon, QClipboard, QPixmap
+from PyQt6.QtCore import Qt, QRect
+from PyQt6.QtGui import QFont, QIcon, QClipboard, QPixmap, QPainter, QColor, QPen, QPolygon
+
+
+# ============================================================================
+# CUSTOM STYLE FOR BETTER CHECKBOX AND COMBOBOX RENDERING
+# ============================================================================
+
+class CustomStyle(QProxyStyle):
+    """Custom style that draws proper checkmarks and dropdown arrows."""
+    
+    def drawPrimitive(self, element, option, painter, widget=None):
+        """Draw primitive elements with custom appearance."""
+        if element == QStyle.PrimitiveElement.PE_IndicatorCheckBox:
+            # Draw custom checkbox
+            rect = option.rect
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            
+            # Draw background
+            if option.state & QStyle.StateFlag.State_On:
+                # Checked state
+                painter.setBrush(QColor("#1a5fb4"))
+                painter.setPen(QPen(QColor("#1a5fb4"), 2))
+            else:
+                # Unchecked state
+                painter.setBrush(QColor("#313244"))
+                painter.setPen(QPen(QColor("#45475a"), 2))
+            
+            painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 3, 3)
+            
+            # Draw checkmark if checked
+            if option.state & QStyle.StateFlag.State_On:
+                painter.setPen(QPen(QColor("#ffffff"), 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+                # Draw checkmark path
+                cx = rect.center().x()
+                cy = rect.center().y()
+                painter.drawLine(cx - 4, cy, cx - 1, cy + 3)
+                painter.drawLine(cx - 1, cy + 3, cx + 4, cy - 3)
+            return
+        
+        if element == QStyle.PrimitiveElement.PE_IndicatorArrowDown:
+            # Draw dropdown arrow
+            rect = option.rect
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setPen(QPen(QColor("#cdd6f4"), 2))
+            
+            cx = rect.center().x()
+            cy = rect.center().y()
+            
+            # Draw V shape arrow
+            painter.drawLine(cx - 4, cy - 2, cx, cy + 2)
+            painter.drawLine(cx, cy + 2, cx + 4, cy - 2)
+            return
+        
+        super().drawPrimitive(element, option, painter, widget)
+    
+    def drawComplexControl(self, control, option, painter, widget=None):
+        """Draw complex controls with custom appearance."""
+        if control == QStyle.ComplexControl.CC_ComboBox:
+            # Let base style draw the combobox
+            super().drawComplexControl(control, option, painter, widget)
+            
+            # Draw our custom arrow on top
+            arrow_rect = self.subControlRect(control, option, QStyle.SubControl.SC_ComboBoxArrow, widget)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setPen(QPen(QColor("#cdd6f4"), 2))
+            
+            cx = arrow_rect.center().x()
+            cy = arrow_rect.center().y()
+            
+            # Draw V shape arrow
+            painter.drawLine(cx - 4, cy - 2, cx, cy + 2)
+            painter.drawLine(cx, cy + 2, cx + 4, cy - 2)
+            return
+        
+        super().drawComplexControl(control, option, painter, widget)
+
 
 # ============================================================================
 # CONSTANTS
@@ -172,22 +248,6 @@ QComboBox {
     font-size: 13px;
     min-width: 120px;
 }
-QComboBox::drop-down {
-    subcontrol-origin: padding;
-    subcontrol-position: top right;
-    width: 25px;
-    border-left: 1px solid #45475a;
-    background-color: #45475a;
-    border-top-right-radius: 4px;
-    border-bottom-right-radius: 4px;
-}
-QComboBox::down-arrow {
-    width: 0;
-    height: 0;
-    border-left: 6px solid transparent;
-    border-right: 6px solid transparent;
-    border-top: 6px solid #cdd6f4;
-}
 QComboBox QAbstractItemView {
     background-color: #313244;
     border: 1px solid #45475a;
@@ -199,17 +259,6 @@ QCheckBox {
     color: #cdd6f4;
     font-size: 13px;
     spacing: 10px;
-}
-QCheckBox::indicator {
-    width: 20px;
-    height: 20px;
-    border-radius: 4px;
-    border: 2px solid #45475a;
-    background-color: #313244;
-}
-QCheckBox::indicator:checked {
-    background-color: #1a5fb4;
-    border-color: #1a5fb4;
 }
 QTextEdit {
     background-color: #11111b;
@@ -730,9 +779,59 @@ class CrashDetectiveWindow(QMainWindow):
                 log['match_reason'] = match_reason
                 matching_logs.append(log)
         
+        # Auto-enable Deep Scan if no results found and it wasn't already enabled
+        auto_deep_scan = False
+        if not matching_logs and not deep_scan:
+            auto_deep_scan = True
+            result += f"\n⚠️ No direct matches found. Automatically enabling Deep Scan...\n"
+            
+            # Re-scan with Deep Scan enabled
+            for log in logs:
+                source_lower = log['source'].lower()
+                message_lower = log['message'].lower()
+                message_normalized = message_lower.replace('\\', '/')
+                
+                is_match = False
+                match_reason = ""
+                
+                # Check similarity ratio with source
+                ratio_source = SequenceMatcher(None, exe_name_no_ext, source_lower).ratio()
+                if ratio_source > 0.6:
+                    is_match = True
+                    match_reason = f"fuzzy match (source: {ratio_source:.0%})"
+                
+                # Check if game folder name appears in message
+                if not is_match and len(game_folder_lower) > 3:
+                    if game_folder_lower in message_lower:
+                        is_match = True
+                        match_reason = f"game folder name match ({game_folder_name})"
+                
+                # Check if game root path appears in message
+                if not is_match and len(game_root_normalized) > 10:
+                    if game_root_normalized in message_normalized:
+                        is_match = True
+                        match_reason = f"game path match"
+                
+                # Check any word in message matches exe name
+                if not is_match:
+                    words = message_lower.split()
+                    for word in words:
+                        if len(word) > 3:
+                            ratio = SequenceMatcher(None, exe_name_no_ext, word).ratio()
+                            if ratio > 0.6:
+                                is_match = True
+                                match_reason = f"fuzzy match (word: {ratio:.0%})"
+                                break
+                
+                if is_match:
+                    log['match_reason'] = match_reason
+                    matching_logs.append(log)
+        
         # Display results
         if not matching_logs:
             result += f"\n✅ No crash events found for '{exe_name}' in the last {days} days.\n"
+            if auto_deep_scan:
+                result += f"   (Deep Scan was automatically enabled but found no matches)\n"
             result += f"\n📊 Total error events scanned: {len(logs)}\n"
         else:
             result += f"\n🔴 Found {len(matching_logs)} crash event(s) for '{exe_name}':\n"
@@ -831,7 +930,10 @@ class CrashDetectiveWindow(QMainWindow):
 def main():
     """Main function - Application entry point."""
     app = QApplication(sys.argv)
-    app.setStyle('Fusion')
+    
+    # Apply custom style for better checkbox and combobox rendering
+    custom_style = CustomStyle('Fusion')
+    app.setStyle(custom_style)
     
     window = CrashDetectiveWindow()
     window.show()
