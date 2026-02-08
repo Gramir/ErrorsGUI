@@ -9,8 +9,6 @@ Tool to search for application crashes in Windows Event Log.
 # IMPORTS
 # ============================================================================
 import sys
-import base64
-import tempfile
 import win32evtlog
 import win32con
 import pywintypes
@@ -105,23 +103,6 @@ class CustomStyle(QProxyStyle):
 # ============================================================================
 # CONSTANTS
 # ============================================================================
-
-# Magnifying glass icon (32x32 PNG) in base64 for window icon
-ICON_BASE64 = """
-iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABHNCSVQICAgIfAhkiAAAAAlwSFlz
-AAALEwAACxMBAJqcGAAAAnxJREFUWIXtl79LHFEQxz+zu3d6nqhgIYKFIoIWgoWFhYX/gIUWFoKF
-hYWFhYUgCBYWFoKFhYWFhYWFhSAIFhYWgoWFhaAgKMT4I0rv3O3uzFvsnt6dZy4XUpgPhtn3dub7
-fTPvzRsICAj4v0F0S7C4tPylWCq/A8qkEQGpwuT46PBUt3Rd9YDBgfxSPte3CpQJJAIBCIBGvaGf
-v3wVe/P2Q3xyYvR5V9pq84bFpdWVYqn8lOQ0IhRAKJ8mwWQ+l9sYG8m/6ERuq4WFxdWVoXz/KpAj
-Ddd6hQjl0wQohNV67cnrt+86srBNACwurX4ulsoPgH5dAgKQJIAk0uT+bUjSsdy3sb+AMrZNsLS8
-9rVYKj8C+hACSQJJIkkkCcAECW60IWJPHz19Fs/NP+4EwLKd0ZaW17YVy+U5YIBGBkgiSQCSBJRJ
-IzRqb5Xrv3r9dnRy4lHba7FlO6Pl5bW/SqXyQ6CPJBIgoYQQSBJJIkkqZ7SXQOF2O+62LMDq2rfv
-xVL5ATDQKCC7DiSBJJIEJAkoCUBjY0TS0NLKxuTk+O1WpJYlWF1d/1EslucZzPcLQSiBpBACkqTJ
-JaAMqLSuKG93RHRpZX1ycmKk5SHUcuLq6vqvYrE8xyCDQgRCCCEEJJEkkiRuFiFA6O4P4eLS8uRE
-s0t6uQRraxu/i6XyPWCAWgIh0DxQCEnSNAdQurJJqV68ebdJX65vqh1rSwmsrG78KZbK94FBGglI
-gqBxDqjb9QzWlv6ZPPH67YdNivl+s+u4ZQnW1jb+FEvle8BgSwJSJxdAJC0+3/fq7YdN0r3xWlor
-sL6x+bdYLN8FBhtPQSGIpIv+Hn4AvwFyqKVKezaohAAAAABJRU5ErkJggg==
-"""
 
 # Days options for dropdown
 DAYS_OPTIONS = ['2 days', '3 days', '7 days', '14 days']
