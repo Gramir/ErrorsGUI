@@ -109,7 +109,7 @@ DAYS_OPTIONS = ['2 days', '3 days', '7 days', '14 days']
 DAYS_MAP = {'2 days': 2, '3 days': 3, '7 days': 7, '14 days': 14}
 
 # Application version
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 APP_TITLE = "Crash Detective"
 
 # Application Error Event IDs
@@ -305,6 +305,23 @@ CRASH_TRANSLATIONS = {
     'winhttp.dll': 'NETWORK ERROR: HTTP connection crash, check network.',
     'mswsock.dll': 'NETWORK ERROR: Windows socket provider crash.',
 }
+
+# Windows Event Log 1000 format labels for crash detail display
+DETAIL_LABELS = [
+    "Faulting application name",
+    "Application version",
+    "Application timestamp",
+    "Faulting module name",
+    "Module version",
+    "Module timestamp",
+    "Exception code",
+    "Fault offset",
+    "Faulting process ID",
+    "Application start time",
+    "Faulting application path",
+    "Faulting module path",
+    "Report ID"
+]
 
 # Dark theme stylesheet
 DARK_STYLESHEET = """
@@ -507,6 +524,7 @@ def read_application_logs(days):
         try:
             flags = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
             
+            event_time = None  # Track last event time for threshold check
             while True:
                 events = win32evtlog.ReadEventLog(hand, flags, 0)
                 
@@ -528,10 +546,10 @@ def read_application_logs(days):
                             event_time.second
                         )
                     
-                    # Stop if event is older than threshold
+                    # Skip if event is older than threshold
+                    # Use continue instead of break — events may not be strictly ordered
                     if event_time < time_threshold:
-                        # Since we're reading backwards, we can stop here
-                        break
+                        continue
                     
                     # Filter by event type (Error = 1)
                     event_type = event.EventType
@@ -555,7 +573,7 @@ def read_application_logs(days):
                     if event.Data:
                         try:
                             raw_data = event.Data.decode('utf-8', errors='ignore')
-                        except:
+                        except (UnicodeDecodeError, AttributeError):
                             raw_data = str(event.Data)
                     
                     log_entry = {
@@ -568,7 +586,7 @@ def read_application_logs(days):
                     logs.append(log_entry)
                 
                 # Check if we've gone past the time threshold
-                if events and event_time < time_threshold:
+                if event_time is not None and event_time < time_threshold:
                     break
                     
         finally:
@@ -695,7 +713,7 @@ def read_general_logs(days, game_folder_name, game_root_path):
                         if event.Data:
                             try:
                                 raw_data = event.Data.decode('utf-8', errors='ignore')
-                            except:
+                            except (UnicodeDecodeError, AttributeError):
                                 raw_data = str(event.Data)
                         
                         log_entry = {
@@ -712,7 +730,10 @@ def read_general_logs(days, game_folder_name, game_root_path):
                         break
                         
             finally:
-                win32evtlog.CloseEventLog(hand)
+                try:
+                    win32evtlog.CloseEventLog(hand)
+                except Exception:
+                    pass  # Handle may already be invalid
                 
         except PermissionError:
             error_msg = "❌ Access denied. Please run as Administrator."
@@ -776,6 +797,7 @@ class CrashDetectiveWindow(QMainWindow):
         self.setWindowTitle(f"Crash Detective")
         self.setMinimumSize(700, 600)
         self.resize(750, 650)
+        self._last_browse_dir = os.path.dirname(os.path.abspath(__file__))
         
         # Set window icon
         self._set_window_icon()
@@ -915,14 +937,14 @@ class CrashDetectiveWindow(QMainWindow):
     
     def _browse_file(self):
         """Open file browser dialog."""
-        initial_dir = os.path.dirname(os.path.abspath(__file__))
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select Executable",
-            initial_dir,
+            self._last_browse_dir,
             "Executables (*.exe);;All files (*.*)"
         )
         if file_path:
+            self._last_browse_dir = os.path.dirname(file_path)
             self.exe_path_input.setText(file_path)
     
     def _on_file_changed(self, text):
@@ -951,6 +973,10 @@ class CrashDetectiveWindow(QMainWindow):
         
         if not exe_path:
             return "⚠️ Please select an executable file."
+        
+        # Reject UNC / network paths
+        if exe_path.startswith('\\\\') or exe_path.startswith('//'):
+            return "⚠️ Network paths are not supported. Please use a local file."
         
         if not os.path.exists(exe_path):
             return f"❌ File does not exist: {exe_path}"
@@ -1009,14 +1035,15 @@ class CrashDetectiveWindow(QMainWindow):
             
             # Fuzzy matching and game folder path matching (auto-fallback)
             if not is_match:
-                # Check similarity ratio with source
-                ratio_source = SequenceMatcher(None, exe_name_no_ext, source_lower).ratio()
-                if ratio_source > 0.6:
-                    is_match = True
-                    match_reason = f"fuzzy match (source: {ratio_source:.0%})"
+                # Check similarity ratio with source (skip for very short names to avoid false positives)
+                if len(exe_name_no_ext) > 4:
+                    ratio_source = SequenceMatcher(None, exe_name_no_ext, source_lower).ratio()
+                    if ratio_source > 0.6:
+                        is_match = True
+                        match_reason = f"fuzzy match (source: {ratio_source:.0%})"
                 
                 # Check if game folder name appears in message
-                if not is_match and len(game_folder_lower) > 3:
+                if not is_match and len(game_folder_lower) > 2:
                     if game_folder_lower in message_lower:
                         is_match = True
                         match_reason = f"game folder name match ({game_folder_name})"
@@ -1027,8 +1054,8 @@ class CrashDetectiveWindow(QMainWindow):
                         is_match = True
                         match_reason = f"game path match"
                 
-                # Check any word in message matches exe name
-                if not is_match:
+                # Check any word in message matches exe name (skip for very short names)
+                if not is_match and len(exe_name_no_ext) > 4:
                     words = message_lower.split()
                     for word in words:
                         if len(word) > 3:  # Skip short words
@@ -1037,6 +1064,34 @@ class CrashDetectiveWindow(QMainWindow):
                                 is_match = True
                                 match_reason = f"fuzzy match (word: {ratio:.0%})"
                                 break
+            
+            # Validate: event must originate from the game's folder
+            # This prevents false positives from other games with similar names
+            # (e.g., Unreal Engine games all end in "-Win64-Shipping.exe")
+            if is_match:
+                event_from_game = False
+                
+                # Check if game root path appears in the message
+                if game_root_normalized in message_normalized:
+                    event_from_game = True
+                # Check if game folder name appears in the message (if name is specific enough)
+                elif len(game_folder_lower) > 3 and game_folder_lower in message_lower:
+                    event_from_game = True
+                # Check exact exe name in message (same binary name = likely same game)
+                elif exe_name_lower in message_lower:
+                    # Also verify the path in the event points to our game folder
+                    msg_parts = log['message'].split(' | ')
+                    if len(msg_parts) > 10:
+                        event_app_path = msg_parts[10].strip().replace('\\', '/').lower()
+                        if game_root_normalized in event_app_path:
+                            event_from_game = True
+                        else:
+                            event_from_game = False  # Same exe name, different folder
+                    else:
+                        event_from_game = True  # Can't verify path, trust exe name match
+                
+                if not event_from_game:
+                    is_match = False
             
             if is_match:
                 log['match_reason'] = match_reason
@@ -1117,21 +1172,7 @@ class CrashDetectiveWindow(QMainWindow):
                 # 11: Module path
                 # 12: Report ID
                 
-                DETAIL_LABELS = [
-                    "Faulting application name",
-                    "Application version",
-                    "Application timestamp",
-                    "Faulting module name",
-                    "Module version",
-                    "Module timestamp",
-                    "Exception code",
-                    "Fault offset",
-                    "Faulting process ID",
-                    "Application start time",
-                    "Faulting application path",
-                    "Faulting module path",
-                    "Report ID"
-                ]
+
                 
                 if message:
                     result += f"   💬 Crash Details:\n"

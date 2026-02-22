@@ -1,1 +1,1 @@
-Veo que no
+Funciona, pero no tengo forma de probar si aun obtendra la imfornacion incorrecta fuera de la carpeta del juego
